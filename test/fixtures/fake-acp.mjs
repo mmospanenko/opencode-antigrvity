@@ -188,7 +188,7 @@ async function handlePrompt(message) {
       options: [{ value: "new-server-model", name: "Server-added model" }],
     }] });
   }
-  respond(id, { stopReason: text.includes("FAKE_REFUSAL") ? "refusal" : text.includes("FAKE_MAX_TOKENS") ? "max_tokens" : text.includes("FAKE_MAX_TURNS") ? "max_turn_requests" : "end_turn", usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, thoughtTokens: 0 } });
+  respond(id, { stopReason: text.includes("FAKE_REFUSAL") ? "refusal" : text.includes("FAKE_MAX_TOKENS") ? "max_tokens" : text.includes("FAKE_MAX_TURNS") ? "max_turn_requests" : "end_turn", ...(process.env.FAKE_ACP_RESULT_USAGE === "off" ? {} : { usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, thoughtTokens: 0 } }) });
   activePrompt = undefined;
 }
 

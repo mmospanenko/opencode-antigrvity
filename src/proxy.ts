@@ -210,6 +210,13 @@ function anthropicUsage(usage: AnthropicUsage | undefined): Record<string, unkno
   };
 }
 
+async function measuredContextUsage(hostSessionID: string | undefined): Promise<AnthropicUsage | undefined> {
+  if (!hostSessionID) return undefined;
+  const snapshot = await readContextSnapshot(hostSessionID);
+  if (snapshot.state !== "measured" || typeof snapshot.used !== "number" || snapshot.used <= 0) return undefined;
+  return { input_tokens: snapshot.used, output_tokens: 0 };
+}
+
 async function probeTurn(events: AsyncIterable<BridgeEvent>): Promise<ProbeResult> {
   const iterator = events[Symbol.asyncIterator]();
   const buffered: BridgeEvent[] = [];
@@ -242,6 +249,7 @@ function contentBlock(kind: "text" | "thinking", text = ""): Record<string, unkn
 function streamAnthropic(
   events: AsyncIterable<BridgeEvent>,
   model: string,
+  hostSessionID: string | undefined,
   signal?: AbortSignal,
 ): Response {
   const id = completionId();
@@ -318,6 +326,7 @@ function streamAnthropic(
         }
         if (!sawResult && finishReason !== "tool_use") throw new AgyProtocolError("The ACP agent ended a turn without a result");
         closeBlock();
+        resultUsage ??= await measuredContextUsage(hostSessionID);
         send({ type: "message_delta", delta: { stop_reason: finishReason, stop_sequence: null }, usage: anthropicUsage(resultUsage) });
         send({ type: "message_stop" });
         if (!closed) controller.close();
@@ -345,9 +354,9 @@ function utilityMessage(result: OneShotResult, model: string): Response {
   return Response.json({ id: completionId(), type: "message", role: "assistant", model, content: [{ type: "text", text: result.response }], stop_reason: "end_turn", stop_sequence: null, usage: anthropicUsage(result.usage) });
 }
 
-function collectedMessage(collected: Awaited<ReturnType<typeof collectTurn>>, model: string): Response {
+function collectedMessage(collected: Awaited<ReturnType<typeof collectTurn>>, model: string, usage: AnthropicUsage | undefined): Response {
   const content = hostVisibleContent(collected.segments).map((part, index) => part.type === "thinking" ? { ...part, signature: `agy-${index}` } : part);
-  return Response.json({ id: completionId(), type: "message", role: "assistant", model, content, stop_reason: collected.finishReason, stop_sequence: null, usage: anthropicUsage(collected.usage) });
+  return Response.json({ id: completionId(), type: "message", role: "assistant", model, content, stop_reason: collected.finishReason, stop_sequence: null, usage: anthropicUsage(usage) });
 }
 
 function utilityStream(result: OneShotResult, model: string): Response {
@@ -441,13 +450,14 @@ async function handleMessages(request: Request, body: AnthropicMessageRequest): 
           if (mapped.kind === "reasoning" || mapped.kind === "activity") content.push({ type: "thinking", thinking: mapped.text, signature: `agy-${content.length}` });
         }
         return Response.json({ id: completionId(), type: "message", role: "assistant", model: responseModel(body.model, selected.requestedModel),
-          content: [...content, ...calls], stop_reason: "tool_use", stop_sequence: null, usage: anthropicUsage(undefined) });
+          content: [...content, ...calls], stop_reason: "tool_use", stop_sequence: null, usage: anthropicUsage(await measuredContextUsage(sessionID)) });
       }
-      return collectedMessage(await collectTurn((async function* () { yield* acp; })()), responseModel(body.model, selected.requestedModel));
+      const collected = await collectTurn((async function* () { yield* acp; })());
+      return collectedMessage(collected, responseModel(body.model, selected.requestedModel), collected.usage ?? await measuredContextUsage(sessionID));
     }
     catch (error) { return errorResponse(error); }
   }
-  return streamAnthropic(probed.replay, responseModel(body.model, selected.requestedModel), request.signal);
+  return streamAnthropic(probed.replay, responseModel(body.model, selected.requestedModel), sessionID, request.signal);
 }
 
 async function handleRequest(request: Request): Promise<Response> {

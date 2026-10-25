@@ -73,6 +73,31 @@ describe("loopback Anthropic proxy", () => {
     expect(text).toContain("message_stop");
   });
 
+  test("falls back to measured context occupancy when ACP reports no usage", async () => {
+    const previous = process.env.FAKE_ACP_RESULT_USAGE;
+    process.env.FAKE_ACP_RESULT_USAGE = "off";
+    try {
+      const base = getProxyBaseUrl();
+      const headers = { ...authHeaders, [SESSION_HEADER]: "usage-fallback" };
+      const response = await fetch(base + "/messages", { method: "POST", headers, body: JSON.stringify(message("FAKE_USAGE_FALLBACK")) });
+      expect(response.status).toBe(200);
+      expect((await response.json()).usage).toMatchObject({ input_tokens: 12, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 });
+
+      const streamed = await fetch(base + "/messages", { method: "POST", headers: { ...headers, [SESSION_HEADER]: "usage-fallback-stream" }, body: JSON.stringify(message("FAKE_USAGE_FALLBACK", { stream: true })) });
+      expect(streamed.status).toBe(200);
+      const events = (await streamed.text()).split("\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6)));
+      expect(events.find(event => event.type === "message_delta").usage).toMatchObject({ input_tokens: 12, output_tokens: 0 });
+    } finally {
+      if (previous === undefined) delete process.env.FAKE_ACP_RESULT_USAGE; else process.env.FAKE_ACP_RESULT_USAGE = previous;
+    }
+  });
+
+  test("prefers ACP usage over the context snapshot", async () => {
+    const response = await fetch(getProxyBaseUrl() + "/messages", { method: "POST", headers: { ...authHeaders, [SESSION_HEADER]: "usage-acp" }, body: JSON.stringify(message("FAKE_USAGE_FALLBACK")) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).usage).toMatchObject({ input_tokens: 10, output_tokens: 2 });
+  });
+
   test("keeps thinking, plans, tools, and text in separate ordered blocks", async () => {
     const response = await fetch(getProxyBaseUrl() + "/messages", { method: "POST", headers: authHeaders, body: JSON.stringify(message("FAKE_PROGRESS", { stream: true })) });
     const text = await response.text();
