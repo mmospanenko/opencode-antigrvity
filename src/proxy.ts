@@ -217,7 +217,7 @@ export async function measuredContextUsage(
   if (!hostSessionID) return undefined;
   try {
     const snapshot = await read(hostSessionID);
-    if (snapshot.state !== "measured" || typeof snapshot.used !== "number" || snapshot.used <= 0) return undefined;
+    if (snapshot.state !== "measured" || typeof snapshot.used !== "number" || !Number.isFinite(snapshot.used) || snapshot.used <= 0) return undefined;
     return { input_tokens: snapshot.used, output_tokens: 0 };
   } catch {
     debug("Ignored unreadable context snapshot for usage fallback");

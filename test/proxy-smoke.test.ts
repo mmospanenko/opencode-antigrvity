@@ -92,6 +92,13 @@ describe("loopback Anthropic proxy", () => {
     expect((await response.json()).usage).toMatchObject({ input_tokens: 10, output_tokens: 2 });
   });
 
+  test("keeps ACP usage in streaming responses", async () => {
+    const response = await fetch(getProxyBaseUrl() + "/messages", { method: "POST", headers: { ...authHeaders, [SESSION_HEADER]: "usage-acp-stream" }, body: JSON.stringify(message("FAKE_USAGE_FALLBACK", { stream: true })) });
+    expect(response.status).toBe(200);
+    const events = (await response.text()).split("\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6)));
+    expect(events.find(event => event.type === "message_delta").usage).toMatchObject({ input_tokens: 10, output_tokens: 2 });
+  });
+
   test("uses the last measured snapshot when the turn reports none", async () => {
     const headers = { ...authHeaders, [SESSION_HEADER]: "usage-lag" };
     const seed = await fetch(getProxyBaseUrl() + "/messages", { method: "POST", headers, body: JSON.stringify(message("seed")) });
@@ -104,6 +111,18 @@ describe("loopback Anthropic proxy", () => {
     const response = await fetch(getProxyBaseUrl() + "/messages", { method: "POST", headers, body: JSON.stringify({ model: "gemini-3.8-flash", max_tokens: 4096, messages }) });
     expect(response.status).toBe(200);
     expect((await response.json()).usage).toMatchObject({ input_tokens: 12, output_tokens: 0 });
+  });
+
+  test("reports tool_use usage from the current execution generation", async () => {
+    const toolBody = (stream: boolean) => JSON.stringify({ model: "gemini-3.8-flash", max_tokens: 4096, ...(stream ? { stream: true } : {}), messages: [{ role: "user", content: "FAKE_MCP FAKE_MCP_USAGE_BEFORE" }], tools: [{ name: "StructuredOutput", input_schema: { type: "object" } }] });
+    const response = await fetch(getProxyBaseUrl() + "/messages", { method: "POST", headers: { ...authHeaders, [SESSION_HEADER]: "usage-tool-current" }, body: toolBody(false) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).usage).toMatchObject({ input_tokens: 21, output_tokens: 0 });
+
+    const streamed = await fetch(getProxyBaseUrl() + "/messages", { method: "POST", headers: { ...authHeaders, [SESSION_HEADER]: "usage-tool-current-stream" }, body: toolBody(true) });
+    expect(streamed.status).toBe(200);
+    const events = (await streamed.text()).split("\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6)));
+    expect(events.find(event => event.type === "message_delta").usage).toMatchObject({ input_tokens: 21, output_tokens: 0 });
   });
 
   test("does not reuse tool_use usage from a replaced execution generation", async () => {

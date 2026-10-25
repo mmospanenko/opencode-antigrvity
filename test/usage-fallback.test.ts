@@ -15,6 +15,8 @@ describe("measured context usage", () => {
     expect(await measuredContextUsage("session", async () => snapshot({ state: "stale" }))).toBeUndefined();
     expect(await measuredContextUsage("session", async () => snapshot({ state: "unknown" }))).toBeUndefined();
     expect(await measuredContextUsage("session", async () => snapshot({ used: 0 }))).toBeUndefined();
+    expect(await measuredContextUsage("session", async () => snapshot({ used: -1 }))).toBeUndefined();
+    expect(await measuredContextUsage("session", async () => snapshot({ used: Number.NaN }))).toBeUndefined();
     expect(await measuredContextUsage(undefined, async () => snapshot())).toBeUndefined();
   });
 

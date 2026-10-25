@@ -91,6 +91,7 @@ async function handlePrompt(message) {
     }
     const list = await rpc("tools/list");
     const name = list.result.tools[0].name;
+    if (text.includes("FAKE_MCP_USAGE_BEFORE")) update({ sessionUpdate: "usage_update", used: 21, size: 1000 });
     if (text.includes("FAKE_MCP_ACTIVITY")) {
       update({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "GENUINE_THOUGHT_BEFORE" } });
       update({ sessionUpdate: "tool_call", toolCallId: "activity-tool", title: "opencode_shell: duplicate-command", kind: "execute", status: "pending" });
