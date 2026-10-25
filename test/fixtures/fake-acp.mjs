@@ -181,14 +181,15 @@ async function handlePrompt(message) {
   if (text.includes("FAKE_FALLBACK_AVAILABLE")) update({ sessionUpdate: "config_option_update", configOptions: [{ id: "model", category: "model", type: "select", name: "Model", currentValue: "gemini-3.8-flash-low", options: [
     { value: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" }, { value: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)" }, { value: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)" },
   ] }] });
-  if (!process.env.FAKE_ACP_NO_USAGE) update({ sessionUpdate: "usage_update", used: 12, size: 1000 });
+  if (!process.env.FAKE_ACP_NO_USAGE && !text.includes("FAKE_NO_USAGE_UPDATE")) update({ sessionUpdate: "usage_update", used: 12, size: 1000 });
   if (text.includes("FAKE_CATALOG_UPDATE")) {
     update({ sessionUpdate: "config_option_update", configOptions: [{
       id: "model", category: "model", type: "select", name: "Model", currentValue: "new-server-model",
       options: [{ value: "new-server-model", name: "Server-added model" }],
     }] });
   }
-  respond(id, { stopReason: text.includes("FAKE_REFUSAL") ? "refusal" : text.includes("FAKE_MAX_TOKENS") ? "max_tokens" : text.includes("FAKE_MAX_TURNS") ? "max_turn_requests" : "end_turn", ...(process.env.FAKE_ACP_RESULT_USAGE === "off" ? {} : { usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, thoughtTokens: 0 } }) });
+  const omitResultUsage = process.env.FAKE_ACP_RESULT_USAGE === "off" || text.includes("FAKE_NO_RESULT_USAGE");
+  respond(id, { stopReason: text.includes("FAKE_REFUSAL") ? "refusal" : text.includes("FAKE_MAX_TOKENS") ? "max_tokens" : text.includes("FAKE_MAX_TURNS") ? "max_turn_requests" : "end_turn", ...(omitResultUsage ? {} : { usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, thoughtTokens: 0 } }) });
   activePrompt = undefined;
 }
 

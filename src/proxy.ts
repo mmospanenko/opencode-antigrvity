@@ -16,14 +16,14 @@ import {
   envNumber,
 } from "./constants.js";
 import { AgyError, AgyProtocolError, asAgyError, retryAfterSeconds } from "./errors.js";
-import { error as logError, info, warn } from "./log.js";
+import { debug, error as logError, info, warn } from "./log.js";
 import { fallbackAcpModelCatalog, resolveAcpModelSelection, type AcpModelCatalog } from "./models.js";
 import { ModelCatalog } from "./model-catalog.js";
 import { normalizePrompt } from "./prompt.js";
 import { detectMetaRequestKind } from "./request-kind.js";
 import { buildGenerateUtilityPrompt, buildUtilityPrompt, runAcpOneShot, type OneShotResult } from "./utility.js";
 import { sessionStore } from "./session-store.js";
-import { readContextSnapshot } from "./telemetry.js";
+import { readContextSnapshot, type ContextSnapshot } from "./telemetry.js";
 import { sessionPool } from "./session-pool.js";
 import type { AcpEvent } from "./protocol.js";
 import { hostBridge, handleHostMcp, closeHostBridges, closeHostBridgesForScope, hostInstructions, type BridgeEvent } from "./host-tools.js";
@@ -210,11 +210,19 @@ function anthropicUsage(usage: AnthropicUsage | undefined): Record<string, unkno
   };
 }
 
-async function measuredContextUsage(hostSessionID: string | undefined): Promise<AnthropicUsage | undefined> {
+export async function measuredContextUsage(
+  hostSessionID: string | undefined,
+  read: (hostSessionID: string) => Promise<ContextSnapshot> = readContextSnapshot,
+): Promise<AnthropicUsage | undefined> {
   if (!hostSessionID) return undefined;
-  const snapshot = await readContextSnapshot(hostSessionID);
-  if (snapshot.state !== "measured" || typeof snapshot.used !== "number" || snapshot.used <= 0) return undefined;
-  return { input_tokens: snapshot.used, output_tokens: 0 };
+  try {
+    const snapshot = await read(hostSessionID);
+    if (snapshot.state !== "measured" || typeof snapshot.used !== "number" || snapshot.used <= 0) return undefined;
+    return { input_tokens: snapshot.used, output_tokens: 0 };
+  } catch {
+    debug("Ignored unreadable context snapshot for usage fallback");
+    return undefined;
+  }
 }
 
 async function probeTurn(events: AsyncIterable<BridgeEvent>): Promise<ProbeResult> {
