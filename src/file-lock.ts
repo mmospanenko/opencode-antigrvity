@@ -3,6 +3,10 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AgyBusyError } from "./errors.js";
 
+/** One extra serialized level recovers the historical base + 8-reaper chain.
+ * Recovery remains intentionally bounded: deeper chains fail closed. */
+const MAX_REAPER_DEPTH = 9;
+
 async function releaseOwned(path: string, token: string): Promise<void> {
   try { if (await readFile(path, "utf8") === token) await unlink(path); }
   catch (error: any) { if (error.code !== "ENOENT") throw error; }
@@ -28,7 +32,7 @@ export async function acquireFileLock(path: string, waitMs = 0): Promise<() => P
 }
 
 async function lock(path: string, waitMs: number, depth: number): Promise<() => Promise<void>> {
-  if (depth > 8) throw new AgyBusyError("Antigravity stale-lock recovery guard limit reached; unknown ownership is protected");
+  if (depth > MAX_REAPER_DEPTH) throw new AgyBusyError("Antigravity stale-lock recovery guard limit reached; unknown ownership is protected");
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const owner = `${path}.${process.pid}.${randomUUID()}`;
   const token = `${process.pid}:${randomUUID()}`;
